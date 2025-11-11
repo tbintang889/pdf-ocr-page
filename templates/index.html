@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <title>OCR Streaming</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    textarea { width: 100%; height: 150px; margin-bottom: 1rem; }
+    progress { width: 100%; height: 20px; margin-top: 1rem; }
+    h3 { margin-top: 1rem; }
+    .page-block { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Upload PDF → OCR Streaming per Halaman</h1>
+  <form id="uploadForm">
+    <input type="file" name="pdf" accept="application/pdf" required>
+    <button type="submit">Upload & Start OCR</button>
+  </form>
+
+  <progress id="progressBar" value="0" max="100"></progress>
+  <div id="results"></div>
+  <div id="downloadAll"></div>
+
+  <script>
+    document.getElementById("uploadForm").onsubmit = async function(e) {
+      e.preventDefault();
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("downloadAll").innerHTML = "";
+      document.getElementById("progressBar").value = 0;
+
+      const formData = new FormData(this);
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      const token = data.token;
+
+      const eventSource = new EventSource("/stream/" + token);
+      eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+          alert(data.error);
+          eventSource.close();
+          return;
+        }
+
+        // Update progress bar
+        document.getElementById("progressBar").value = data.progress;
+
+        // Tampilkan hasil OCR per halaman
+        const block = document.createElement("div");
+        block.className = "page-block";
+        block.innerHTML = `
+          <h3>Page ${data.page}</h3>
+          <textarea readonly>${data.text}</textarea><br>
+          <a href="/download/${token}/page/${data.page}">Download JSON Page ${data.page}</a>
+        `;
+        document.getElementById("results").appendChild(block);
+
+        // Jika progres 100%, tampilkan link download full JSON
+        if (data.progress === 100) {
+          const linkAll = document.createElement("a");
+          linkAll.href = "/download/" + token;
+          linkAll.textContent = "⬇️ Download Full JSON (All Pages)";
+          document.getElementById("downloadAll").appendChild(linkAll);
+          eventSource.close();
+        }
+      };
+    };
+  </script>
+</body>
+</html>
